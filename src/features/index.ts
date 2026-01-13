@@ -127,3 +127,58 @@ export {
   type SkillMcpConfig,
   type SkillRegistry
 } from './builtin-skills/index.js';
+
+// Model Routing - intelligent model tier routing
+export {
+  // Main functions
+  routeTask,
+  routeWithEscalation,
+  routeAndAdaptTask,
+  escalateModel,
+  canEscalate,
+  explainRouting,
+  quickTierForAgent,
+  // Signal extraction
+  extractLexicalSignals,
+  extractStructuralSignals,
+  extractContextSignals,
+  extractAllSignals,
+  // Scoring
+  calculateComplexityScore,
+  calculateComplexityTier,
+  scoreToTier,
+  getScoreBreakdown,
+  calculateConfidence,
+  // Rules
+  evaluateRules,
+  getMatchingRules,
+  createRule,
+  mergeRules,
+  DEFAULT_ROUTING_RULES,
+  // Prompt adaptation
+  adaptPromptForTier,
+  getPromptStrategy,
+  getPromptPrefix,
+  getPromptSuffix,
+  createDelegationPrompt,
+  getTaskInstructions,
+  // Constants
+  TIER_MODELS,
+  TIER_TO_MODEL_TYPE,
+  DEFAULT_ROUTING_CONFIG,
+  AGENT_CATEGORY_TIERS,
+  COMPLEXITY_KEYWORDS,
+  TIER_PROMPT_STRATEGIES,
+  TIER_TASK_INSTRUCTIONS,
+  // Types
+  type ComplexityTier,
+  type ComplexitySignals,
+  type LexicalSignals,
+  type StructuralSignals,
+  type ContextSignals,
+  type RoutingDecision,
+  type RoutingContext,
+  type RoutingConfig,
+  type RoutingRule,
+  type PromptAdaptationStrategy,
+} from './model-routing/index.js';

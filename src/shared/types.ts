@@ -61,6 +61,33 @@ export interface PluginConfig {
     analyze?: string[];
     ultrathink?: string[];
   };
+
+  // Intelligent model routing configuration
+  routing?: {
+    /** Enable intelligent model routing */
+    enabled?: boolean;
+    /** Default tier when no rules match */
+    defaultTier?: 'LOW' | 'MEDIUM' | 'HIGH';
+    /** Enable automatic escalation on failure */
+    escalationEnabled?: boolean;
+    /** Maximum escalation attempts */
+    maxEscalations?: number;
+    /** Model mapping per tier */
+    tierModels?: {
+      LOW?: string;
+      MEDIUM?: string;
+      HIGH?: string;
+    };
+    /** Agent-specific tier overrides */
+    agentOverrides?: Record<string, {
+      tier: 'LOW' | 'MEDIUM' | 'HIGH';
+      reason: string;
+    }>;
+    /** Keywords that force escalation to higher tier */
+    escalationKeywords?: string[];
+    /** Keywords that suggest lower tier */
+    simplificationKeywords?: string[];
+  };
 }
 
 export interface SessionState {

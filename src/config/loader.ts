@@ -55,6 +55,33 @@ export const DEFAULT_CONFIG: PluginConfig = {
     search: ['search', 'find', 'locate'],
     analyze: ['analyze', 'investigate', 'examine'],
     ultrathink: ['ultrathink', 'think', 'reason', 'ponder']
+  },
+  // Intelligent model routing configuration
+  routing: {
+    enabled: true,
+    defaultTier: 'MEDIUM',
+    escalationEnabled: true,
+    maxEscalations: 2,
+    tierModels: {
+      LOW: 'claude-haiku-4-5-20251001',
+      MEDIUM: 'claude-sonnet-4-5-20250929',
+      HIGH: 'claude-opus-4-5-20251101'
+    },
+    agentOverrides: {
+      oracle: { tier: 'HIGH', reason: 'Advisory agent requires deep reasoning' },
+      prometheus: { tier: 'HIGH', reason: 'Strategic planning requires deep reasoning' },
+      momus: { tier: 'HIGH', reason: 'Critical review requires deep reasoning' },
+      metis: { tier: 'HIGH', reason: 'Pre-planning analysis requires deep reasoning' },
+      explore: { tier: 'LOW', reason: 'Exploration is search-focused' },
+      'document-writer': { tier: 'LOW', reason: 'Documentation is straightforward' }
+    },
+    escalationKeywords: [
+      'critical', 'production', 'urgent', 'security', 'breaking',
+      'architecture', 'refactor', 'redesign', 'root cause'
+    ],
+    simplificationKeywords: [
+      'find', 'list', 'show', 'where', 'search', 'locate', 'grep'
+    ]
   }
 };
 
@@ -165,6 +192,31 @@ export function loadEnvConfig(): Partial<PluginConfig> {
         maxBackgroundTasks: maxTasks
       };
     }
+  }
+
+  // Routing configuration from environment
+  if (process.env.SISYPHUS_ROUTING_ENABLED !== undefined) {
+    config.routing = {
+      ...config.routing,
+      enabled: process.env.SISYPHUS_ROUTING_ENABLED === 'true'
+    };
+  }
+
+  if (process.env.SISYPHUS_ROUTING_DEFAULT_TIER) {
+    const tier = process.env.SISYPHUS_ROUTING_DEFAULT_TIER.toUpperCase();
+    if (tier === 'LOW' || tier === 'MEDIUM' || tier === 'HIGH') {
+      config.routing = {
+        ...config.routing,
+        defaultTier: tier as 'LOW' | 'MEDIUM' | 'HIGH'
+      };
+    }
+  }
+
+  if (process.env.SISYPHUS_ESCALATION_ENABLED !== undefined) {
+    config.routing = {
+      ...config.routing,
+      escalationEnabled: process.env.SISYPHUS_ESCALATION_ENABLED === 'true'
+    };
   }
 
   return config;
