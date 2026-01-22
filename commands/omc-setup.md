@@ -54,7 +54,20 @@ This will:
 grep -q "oh-my-claudecode" ~/.claude/settings.json && echo "Plugin verified" || echo "Plugin NOT found - run: claude /install-plugin oh-my-claudecode"
 ```
 
-## Step 5: Detect Upgrade from 2.x
+## Step 5: Offer MCP Server Configuration
+
+MCP servers extend Claude Code with additional tools (web search, GitHub, etc.).
+
+Ask user: "Would you like to configure MCP servers for enhanced capabilities? (Context7, Exa search, GitHub, etc.)"
+
+If yes, invoke the mcp-setup skill:
+```
+/oh-my-claudecode:mcp-setup
+```
+
+If no, skip to next step.
+
+## Step 6: Detect Upgrade from 2.x
 
 Check if user has existing configuration:
 ```bash
@@ -64,7 +77,7 @@ ls ~/.claude/commands/ralph-loop.md 2>/dev/null || ls ~/.claude/commands/ultrawo
 
 If found, this is an upgrade from 2.x.
 
-## Step 6: Show Welcome Message
+## Step 7: Show Welcome Message
 
 ### For New Users:
 
@@ -90,6 +103,9 @@ Just include these words naturally in your request:
 | plan | Planning interview | "plan the new endpoints" |
 
 Combine them: "ralph ulw: migrate the database"
+
+MCP SERVERS:
+Run /oh-my-claudecode:mcp-setup to add tools like web search, GitHub, etc.
 
 HUD STATUSLINE:
 The status bar now shows OMC state. Restart Claude Code to see it.

@@ -138,10 +138,58 @@ I'll intelligently determine what to stop based on context.
 
 ---
 
+## MCP Server Configuration
+
+Extend Claude Code with additional tools via Model Context Protocol (MCP) servers.
+
+```
+/oh-my-claudecode:mcp-setup
+```
+
+### Supported MCP Servers
+
+| Server | Description | API Key Required |
+|--------|-------------|------------------|
+| **Context7** | Documentation and code context from popular libraries | No |
+| **Exa** | Enhanced web search (replaces built-in websearch) | Yes |
+| **Filesystem** | Extended file system access | No |
+| **GitHub** | GitHub API for issues, PRs, repos | Yes (PAT) |
+
+### Quick Setup
+
+Run the setup command and follow the prompts:
+```
+/oh-my-claudecode:mcp-setup
+```
+
+Or configure manually in `~/.claude/settings.json`:
+```json
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@context7/mcp"]
+    },
+    "exa": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/exa-mcp-server"],
+      "env": {
+        "EXA_API_KEY": "your-key-here"
+      }
+    }
+  }
+}
+```
+
+After configuration, restart Claude Code for changes to take effect.
+
+---
+
 ## What's Under the Hood
 
 - **28 Specialized Agents** - architect, researcher, explore, designer, writer, vision, critic, analyst, executor, planner, qa-tester, scientist (with tier variants)
-- **30 Skills** - orchestrate, ultrawork, ralph, planner, deepsearch, deepinit, git-master, frontend-ui-ux, learner, research, and more
+- **31 Skills** - orchestrate, ultrawork, ralph, planner, deepsearch, deepinit, git-master, frontend-ui-ux, learner, research, mcp-setup, and more
+- **MCP Server Support** - Easy configuration of Context7, Exa, GitHub, and custom MCP servers
 - **Persistent Python REPL** - True variable persistence for data analysis
 - **Research Workflow** - Parallel scientist orchestration with `/oh-my-claudecode:research` command (new in 3.3.x)
 - **HUD Statusline** - Real-time visualization of orchestration state
