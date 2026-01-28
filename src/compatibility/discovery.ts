@@ -8,9 +8,10 @@
  * - Project-local .claude-plugin/ directories
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
-import { join, basename, dirname } from 'path';
+import { existsSync, readdirSync, readFileSync, statSync, realpathSync } from 'fs';
+import { join, basename, dirname, resolve, normalize } from 'path';
 import { homedir } from 'os';
+import Ajv, { type ValidateFunction } from 'ajv';
 import type {
   DiscoveryOptions,
   DiscoveredPlugin,
@@ -20,6 +21,138 @@ import type {
   ExternalTool,
   ToolCapability,
 } from './types.js';
+
+/**
+ * Security Error for discovery operations
+ */
+export class DiscoverySecurityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DiscoverySecurityError';
+  }
+}
+
+/**
+ * JSON Schema for plugin manifest validation
+ */
+const pluginManifestSchema = {
+  type: 'object',
+  required: ['name', 'version'],
+  properties: {
+    name: { type: 'string', pattern: '^[a-zA-Z0-9_-]+$', maxLength: 100 },
+    version: { type: 'string', maxLength: 50 },
+    description: { type: 'string', maxLength: 500 },
+    namespace: { type: 'string', pattern: '^[a-zA-Z0-9_-]+$', maxLength: 100 },
+    skills: {
+      oneOf: [
+        { type: 'string', maxLength: 200 },
+        { type: 'array', items: { type: 'string', maxLength: 200 }, maxItems: 50 },
+      ],
+    },
+    agents: {
+      oneOf: [
+        { type: 'string', maxLength: 200 },
+        { type: 'array', items: { type: 'string', maxLength: 200 }, maxItems: 50 },
+      ],
+    },
+    tools: {
+      type: 'array',
+      maxItems: 100,
+      items: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', pattern: '^[a-zA-Z0-9_-]+$', maxLength: 100 },
+          description: { type: 'string', maxLength: 500 },
+          inputSchema: { type: 'object' },
+        },
+        additionalProperties: false,
+      },
+    },
+    permissions: {
+      type: 'array',
+      maxItems: 100,
+      items: {
+        type: 'object',
+        properties: {
+          tool: { type: 'string', maxLength: 200 },
+          scope: { type: 'string', enum: ['read', 'write', 'execute'] },
+          patterns: { type: 'array', items: { type: 'string', maxLength: 500 }, maxItems: 50 },
+          reason: { type: 'string', maxLength: 500 },
+        },
+      },
+    },
+    mcpServers: {
+      type: 'object',
+      additionalProperties: {
+        type: 'object',
+        required: ['command'],
+        properties: {
+          command: { type: 'string', maxLength: 500 },
+          args: { type: 'array', items: { type: 'string', maxLength: 500 }, maxItems: 50 },
+          env: { type: 'object', additionalProperties: { type: 'string', maxLength: 1000 } },
+          enabled: { type: 'boolean' },
+        },
+      },
+    },
+  },
+  additionalProperties: true,
+};
+
+/**
+ * JSON Schema for MCP server config validation
+ */
+const mcpServerConfigSchema = {
+  type: 'object',
+  required: ['command'],
+  properties: {
+    command: { type: 'string', minLength: 1, maxLength: 500 },
+    args: { type: 'array', items: { type: 'string', maxLength: 500 }, maxItems: 50 },
+    env: { type: 'object', additionalProperties: { type: 'string', maxLength: 1000 } },
+    enabled: { type: 'boolean' },
+  },
+  additionalProperties: false,
+};
+
+// Compile schemas
+const ajv = new Ajv.default({ allErrors: true, strict: false });
+const validatePluginManifest: ValidateFunction = ajv.compile(pluginManifestSchema);
+const validateMcpServerConfig: ValidateFunction = ajv.compile(mcpServerConfigSchema);
+
+/**
+ * SECURITY: Validate that a path stays within a base directory
+ * Prevents path traversal attacks like ../../../../etc/passwd
+ */
+function isPathWithinDirectory(basePath: string, targetPath: string): boolean {
+  try {
+    // Resolve both paths to absolute form
+    const resolvedBase = resolve(basePath);
+    const resolvedTarget = resolve(basePath, targetPath);
+
+    // Normalize paths to handle ../ sequences
+    const normalizedBase = normalize(resolvedBase);
+    const normalizedTarget = normalize(resolvedTarget);
+
+    // Check if target is within base (starts with base path)
+    if (!normalizedTarget.startsWith(normalizedBase)) {
+      return false;
+    }
+
+    // Additional check: verify the path actually exists within base
+    // by checking real path (follows symlinks)
+    if (existsSync(normalizedTarget)) {
+      const realTarget = realpathSync(normalizedTarget);
+      const realBase = existsSync(normalizedBase) ? realpathSync(normalizedBase) : normalizedBase;
+      if (!realTarget.startsWith(realBase)) {
+        return false;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Default paths for discovery
@@ -65,12 +198,23 @@ function inferCapabilities(name: string, description?: string): ToolCapability[]
 }
 
 /**
- * Parse a plugin manifest file
+ * Parse and validate a plugin manifest file
  */
 function parsePluginManifest(manifestPath: string): PluginManifest | null {
   try {
     const content = readFileSync(manifestPath, 'utf-8');
-    return JSON.parse(content) as PluginManifest;
+    const parsed = JSON.parse(content);
+
+    // SECURITY: Validate manifest against schema
+    if (!validatePluginManifest(parsed)) {
+      const errors = validatePluginManifest.errors
+        ?.map((e: { instancePath?: string; message?: string }) => `${e.instancePath}: ${e.message}`)
+        .join(', ');
+      console.warn(`[Security] Invalid plugin manifest at ${manifestPath}: ${errors}`);
+      return null;
+    }
+
+    return parsed as PluginManifest;
   } catch (error) {
     return null;
   }
@@ -86,9 +230,22 @@ function discoverPluginSkills(pluginPath: string, manifest: PluginManifest): Ext
   // Handle skills directory
   let skillsPaths: string[] = [];
   if (typeof manifest.skills === 'string') {
+    // SECURITY: Validate path stays within plugin directory
+    if (!isPathWithinDirectory(pluginPath, manifest.skills)) {
+      console.warn(`[Security] Path traversal detected in plugin ${manifest.name}: skills path "${manifest.skills}" escapes plugin directory`);
+      return tools;
+    }
     skillsPaths = [join(pluginPath, manifest.skills)];
   } else if (Array.isArray(manifest.skills)) {
-    skillsPaths = manifest.skills.map(s => join(pluginPath, s));
+    skillsPaths = [];
+    for (const s of manifest.skills) {
+      // SECURITY: Validate each path
+      if (!isPathWithinDirectory(pluginPath, s)) {
+        console.warn(`[Security] Path traversal detected in plugin ${manifest.name}: skills path "${s}" escapes plugin directory`);
+        continue;
+      }
+      skillsPaths.push(join(pluginPath, s));
+    }
   }
 
   for (const skillsPath of skillsPaths) {
@@ -152,9 +309,22 @@ function discoverPluginAgents(pluginPath: string, manifest: PluginManifest): Ext
   // Handle agents directory
   let agentsPaths: string[] = [];
   if (typeof manifest.agents === 'string') {
+    // SECURITY: Validate path stays within plugin directory
+    if (!isPathWithinDirectory(pluginPath, manifest.agents)) {
+      console.warn(`[Security] Path traversal detected in plugin ${manifest.name}: agents path "${manifest.agents}" escapes plugin directory`);
+      return tools;
+    }
     agentsPaths = [join(pluginPath, manifest.agents)];
   } else if (Array.isArray(manifest.agents)) {
-    agentsPaths = manifest.agents.map(a => join(pluginPath, a));
+    agentsPaths = [];
+    for (const a of manifest.agents) {
+      // SECURITY: Validate each path
+      if (!isPathWithinDirectory(pluginPath, a)) {
+        console.warn(`[Security] Path traversal detected in plugin ${manifest.name}: agents path "${a}" escapes plugin directory`);
+        continue;
+      }
+      agentsPaths.push(join(pluginPath, a));
+    }
   }
 
   for (const agentsPath of agentsPaths) {
@@ -317,6 +487,15 @@ function parseMcpDesktopConfig(configPath: string): DiscoveredMcpServer[] {
     }
 
     for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+      // SECURITY: Validate server config against schema
+      if (!validateMcpServerConfig(serverConfig)) {
+        const errors = validateMcpServerConfig.errors
+          ?.map((e: { instancePath?: string; message?: string }) => `${e.instancePath}: ${e.message}`)
+          .join(', ');
+        console.warn(`[Security] Invalid MCP server config for "${name}": ${errors}`);
+        continue;
+      }
+
       servers.push({
         name,
         config: serverConfig,
@@ -353,6 +532,15 @@ function parseMcpSettings(settingsPath: string): DiscoveredMcpServer[] {
     }
 
     for (const [name, serverConfig] of Object.entries(settings.mcpServers)) {
+      // SECURITY: Validate server config against schema
+      if (!validateMcpServerConfig(serverConfig)) {
+        const errors = validateMcpServerConfig.errors
+          ?.map((e: { instancePath?: string; message?: string }) => `${e.instancePath}: ${e.message}`)
+          .join(', ');
+        console.warn(`[Security] Invalid MCP server config for "${name}": ${errors}`);
+        continue;
+      }
+
       servers.push({
         name,
         config: serverConfig,

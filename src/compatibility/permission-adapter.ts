@@ -8,6 +8,7 @@
  * - Delegation-aware routing to avoid conflicts
  */
 
+import safeRegex from 'safe-regex';
 import type {
   ExternalTool,
   PluginPermission,
@@ -110,6 +111,31 @@ const safePatterns: SafeCommandPattern[] = [...BUILTIN_SAFE_PATTERNS];
 const permissionCache = new Map<string, PermissionCheckResult>();
 
 /**
+ * Security Error for permission adapter operations
+ */
+export class PermissionSecurityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PermissionSecurityError';
+  }
+}
+
+/**
+ * Validate a regex pattern for ReDoS safety
+ * @returns true if the pattern is safe, false if it could cause ReDoS
+ */
+function isRegexSafe(pattern: string): boolean {
+  try {
+    // First check if it's valid regex
+    new RegExp(pattern);
+    // Then check if it's safe from ReDoS
+    return safeRegex(pattern);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Register safe patterns from a plugin
  */
 export function registerPluginSafePatterns(plugin: DiscoveredPlugin): void {
@@ -118,6 +144,14 @@ export function registerPluginSafePatterns(plugin: DiscoveredPlugin): void {
   for (const permission of plugin.manifest.permissions) {
     if (permission.scope === 'read' && permission.patterns) {
       for (const pattern of permission.patterns) {
+        // SECURITY: Validate regex pattern before creating RegExp
+        if (!isRegexSafe(pattern)) {
+          console.warn(
+            `[Security] Skipping unsafe regex pattern from plugin ${plugin.name}: ${pattern}`
+          );
+          continue;
+        }
+
         safePatterns.push({
           tool: permission.tool,
           pattern: new RegExp(pattern),

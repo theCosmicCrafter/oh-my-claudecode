@@ -11,6 +11,7 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
+import { basename } from 'path';
 import type {
   DiscoveredMcpServer,
   McpServerEntry,
@@ -19,6 +20,56 @@ import type {
   ToolCapability,
 } from './types.js';
 import { getRegistry } from './registry.js';
+
+/**
+ * Security Error for MCP bridge operations
+ */
+export class McpSecurityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'McpSecurityError';
+  }
+}
+
+/**
+ * Allowed commands whitelist for MCP server spawning
+ * Only these executables can be spawned as MCP servers
+ */
+const ALLOWED_COMMANDS = new Set([
+  'node',
+  'npx',
+  'python',
+  'python3',
+  'ruby',
+  'go',
+  'deno',
+  'bun',
+  'uvx',
+  'uv',
+  'cargo',
+  'java',
+  'dotnet',
+]);
+
+/**
+ * Dangerous environment variables that could be used for code injection
+ */
+const BLOCKED_ENV_VARS = new Set([
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'NODE_OPTIONS',
+  'NODE_DEBUG',
+  'ELECTRON_RUN_AS_NODE',
+  'PYTHONSTARTUP',
+  'PYTHONPATH',
+  'RUBYOPT',
+  'PERL5OPT',
+  'BASH_ENV',
+  'ENV',
+  'ZDOTDIR',
+]);
 
 /**
  * MCP message types
@@ -99,10 +150,33 @@ export class McpBridge extends EventEmitter {
       return this.convertToExternalTools(serverName, conn.tools);
     }
 
+    // SECURITY: Validate command is in whitelist
+    const commandBasename = basename(config.command);
+    if (!ALLOWED_COMMANDS.has(commandBasename)) {
+      throw new McpSecurityError(
+        `Command not in whitelist: ${config.command}. ` +
+        `Allowed commands: ${[...ALLOWED_COMMANDS].join(', ')}`
+      );
+    }
+
+    // SECURITY: Filter out dangerous environment variables
+    const safeEnv: Record<string, string> = { ...process.env } as Record<string, string>;
+    if (config.env) {
+      for (const [key, value] of Object.entries(config.env)) {
+        if (BLOCKED_ENV_VARS.has(key.toUpperCase())) {
+          this.emit('security-warning', {
+            server: serverName,
+            message: `Blocked dangerous environment variable: ${key}`,
+          });
+          continue;
+        }
+        safeEnv[key] = value;
+      }
+    }
+
     // Spawn the server process
-    const env = { ...process.env, ...config.env };
     const child = spawn(config.command, config.args || [], {
-      env,
+      env: safeEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -117,6 +191,18 @@ export class McpBridge extends EventEmitter {
     };
 
     this.connections.set(serverName, connection);
+
+    // SECURITY: Set up error handler for spawn failures
+    child.on('error', (error: Error) => {
+      this.connections.delete(serverName);
+      this.emit('spawn-error', { server: serverName, error: error.message });
+      // Update registry with error state
+      const registry = getRegistry();
+      registry.updateMcpServer(serverName, {
+        connected: false,
+        error: `Spawn failed: ${error.message}`,
+      });
+    });
 
     // Set up message handling
     child.stdout?.on('data', (data: Buffer) => {
