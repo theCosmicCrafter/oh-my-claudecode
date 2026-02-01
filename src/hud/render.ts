@@ -19,6 +19,7 @@ import { renderPermission } from './elements/permission.js';
 import { renderThinking } from './elements/thinking.js';
 import { renderSession } from './elements/session.js';
 import { renderAutopilot } from './elements/autopilot.js';
+import { renderCwd } from './elements/cwd.js';
 import {
   getAnalyticsDisplay,
   renderAnalyticsLineWithConfig,
@@ -127,6 +128,12 @@ export async function render(context: HudRenderContext, config: HudConfig): Prom
     return limitOutputLines(lines, config.elements.maxOutputLines).join('\n');
   }
 
+  // Working directory (first element)
+  if (enabledElements.cwd) {
+    const cwdElement = renderCwd(context.cwd, enabledElements.cwdFormat || 'relative');
+    if (cwdElement) elements.push(cwdElement);
+  }
+
   // [OMC] label
   if (enabledElements.omcLabel) {
     elements.push(bold('[OMC]'));
@@ -148,7 +155,7 @@ export async function render(context: HudRenderContext, config: HudConfig): Prom
 
   // Extended thinking indicator
   if (enabledElements.thinking && context.thinkingState) {
-    const thinking = renderThinking(context.thinkingState);
+    const thinking = renderThinking(context.thinkingState, enabledElements.thinkingFormat || 'text');
     if (thinking) elements.push(thinking);
   }
 
