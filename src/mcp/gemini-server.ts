@@ -19,22 +19,24 @@ import {
 // Define the ask_gemini tool using the SDK tool() helper
 const askGeminiTool = tool(
   "ask_gemini",
-  "Send a prompt to Google Gemini CLI for design review or implementation validation. Gemini excels at analyzing large codebases with its 1M token context window. Requires agent_role to specify the perspective (designer or executor). Requires Gemini CLI (npm install -g @google/gemini-cli).",
+  "Send a prompt to Google Gemini CLI for design review or implementation validation. Gemini excels at analyzing large codebases with its 1M token context window. Requires agent_role to specify the perspective (designer, writer, or vision). Requires Gemini CLI (npm install -g @google/gemini-cli).",
   {
     agent_role: { type: "string", description: `Required. Agent perspective for Gemini: ${GEMINI_VALID_ROLES.join(', ')}. Gemini is optimized for design review and implementation tasks.` },
     files: { type: "array", items: { type: "string" }, description: "File paths for Gemini to analyze (leverages 1M token context window)" },
     prompt: { type: "string", description: "The prompt to send to Gemini" },
     model: { type: "string", description: `Gemini model to use (default: ${GEMINI_DEFAULT_MODEL}). Automatic fallback chain: ${GEMINI_MODEL_FALLBACKS.join(' → ')}` },
+    background: { type: "boolean", description: "Run in background (non-blocking). Returns immediately with job metadata and file paths. Check response file for completion." },
   } as any,
   async (args: any) => {
-    const { prompt, agent_role, model, files } = args as {
+    const { prompt, agent_role, model, files, background } = args as {
       prompt: string;
       agent_role: string;
       model?: string;
       files?: string[];
+      background?: boolean;
     };
 
-    return handleAskGemini({ prompt, agent_role, model, files });
+    return handleAskGemini({ prompt, agent_role, model, files, background });
   }
 );
 
